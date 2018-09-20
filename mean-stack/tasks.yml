@@ -1,0 +1,19 @@
+- name: create a mean stack environment
+  hosts: mean-stack
+  tasks:
+    - name: download nodejs installation script
+      uri: >
+        url=https://deb.nodesource.com/setup_8.x
+        method=GET
+        dest=/tmp/node_installer.sh
+        status_code=304
+
+    - name: install nodejs
+      command: /bin/bash -C /tmp/node_installer.sh
+
+    - name: print nodejs version
+      command: node -v
+      register: node_version
+
+    - debug:
+      msg: "{{ node_version }}"
