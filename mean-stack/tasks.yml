@@ -1,19 +1,42 @@
 - name: create a mean stack environment
   hosts: mean-stack
   tasks:
-    - name: download nodejs installation script
-      uri: >
-        url=https://deb.nodesource.com/setup_8.x
-        method=GET
-        dest=/tmp/node_installer.sh
-        status_code=304
+    - name: copy node setup script
+      copy: >
+        src=files/node_8_setup.sh
+        dest=/tmp/node_8_setup.sh
+        mode=0600
+        owner=root
+
+    - name: setup nodejs packages
+      command: /bin/bash -C /tmp/node_8_setup.sh
 
     - name: install nodejs
-      command: /bin/bash -C /tmp/node_installer.sh
+      apt: name=nodejs
 
-    - name: print nodejs version
-      command: node -v
-      register: node_version
+    - name: import mongodb apt gpg key
+      command: apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 2930ADAE8CAF5059EE73BB4B58712A2291FA4AD5
 
-    - debug:
-      msg: "{{ node_version }}"
+    - name: create a sources list file for mongodb
+      copy:
+        dest: "/etc/apt/sources.list.d/mongodb-org-3.6.list"
+        content: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu xenial/mongodb-org/3.6 multiverse"
+
+    - name: install mongodb apt packages
+      apt: name=mongodb-org update_cache=yes
+
+    - name: copy mongodb init.d script
+      copy:
+        src: "files/mongod.sh"
+        dest: "/etc/init.d/mongod.sh"
+        owner: "root"
+        mode: "0700"
+
+    - name: make mongodb accessible from outside container
+      replace:
+        path: "/etc/mongod.conf"
+        regexp: "bindIp: 127.0.0.1"
+        replace: "bindIp: 0.0.0.0"
+
+    - name: run mongodb service
+      command: /etc/init.d/mongod.sh start
