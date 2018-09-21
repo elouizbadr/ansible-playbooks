@@ -40,3 +40,80 @@
 
     - name: run mongodb service
       command: /etc/init.d/mongod.sh start
+
+    - name: install redis dependencies
+      apt: name={{item}}
+      with_items:
+        - build-essential
+        - tcl
+
+    - name: download redis sources
+      uri:
+        url: "http://download.redis.io/redis-stable.tar.gz"
+        dest: "/tmp/redis-stable.tar.gz"
+        status_code: 200, 304
+
+    - name: extract redis sources
+      unarchive: >
+        src=/tmp/redis-stable.tar.gz
+        dest=/tmp/
+        remote_src=yes
+        owner=root
+        mode=0700
+    
+    - name: clean old make executions
+      make:
+        chdir: /tmp/redis-stable
+        target: distclean
+
+    - name: compile redis sources
+      make:
+        chdir: /tmp/redis-stable
+  
+    - name: test redis sources
+      make:
+        chdir: /tmp/redis-stable
+        target: test
+
+    - name: install redis binaries
+      make:
+        chdir: /tmp/redis-stable
+        target: install
+
+    - name: create redis user
+      user: name=redis system=yes createhome=no
+
+    - name: create redis working directory
+      file: path=/var/lib/redis owner=redis state=directory
+
+    - name: create redis config directory
+      file: path=/etc/redis owner=root state=directory
+
+    - name: copy redis configuration file
+      copy: 
+        dest: "/etc/redis/redis.conf"
+        src: "/tmp/redis-stable/redis.conf"
+        remote_src: yes
+
+    - name: set supervised to systemd in redis configuration
+      replace:
+        path: "/etc/redis/redis.conf"
+        regexp: "supervised no"
+        replace: "supervised systemd"
+
+    - name: set dump data directory in redis configuration
+      replace:
+        path: "/etc/redis/redis.conf"
+        regexp: "^dir ./$"
+        replace: "dir /var/lib/redis"
+
+    - name: make redis accessible from outside container
+      replace:
+        path: "/etc/redis/redis.conf"
+        regexp: "^bind 127.0.0.1$"
+        replace: "bind 0.0.0.0"
+
+    - name: start redis
+      command: "redis-server /etc/redis/redis.conf"
+      async: 45
+      poll: 0
