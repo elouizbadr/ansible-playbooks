@@ -8,6 +8,7 @@
     # Redis vars
     redis_src_dir: "/tmp/redis-stable"
     redis_cfg_file: "/etc/redis/redis.conf"
+    redis_test_installation: False
   tasks:
     - name: setup nodejs packages
       script: files/nodejs/setup_{{ nodejs_version }}.sh
@@ -68,6 +69,7 @@
       make:
         chdir: "{{ redis_src_dir }}"
         target: test
+      when: redis_test_installation == True
 
     - name: install redis binaries
       make:
