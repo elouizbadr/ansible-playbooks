@@ -3,12 +3,27 @@
   vars:
     # NodeJS vars
     nodejs_version: "8"
+    nodejs_process_manager: True
     # MongoDB vars
     mongodb_version: "3.6"
     # Redis vars
+    redis_install: True
     redis_src_dir: "/tmp/redis-stable"
     redis_cfg_file: "/etc/redis/redis.conf"
     redis_test_installation: False
+    # Nginx vars
+    nginx_install: True
+    nginx_site_cfg_file: /etc/nginx/sites-available/default
+    # Application vars
+    app_install: True
+    app_src_vcs: "git"
+    app_src_repo: "https://github.com/linnovate/mean.git"
+    app_src_dir: "/opt/mean.io"
+    app_src_depth: "1"
+    app_port_number: "3000"
+    app_root_dir: "/opt/mean.io/src"
+    app_index_file: "/opt/mean.io/src/index.html"
+    app_domain_name: "mean.elouiz-badr.com"
   tasks:
     - name: setup nodejs packages
       script: files/nodejs/setup_{{ nodejs_version }}.sh
@@ -41,12 +56,14 @@
       with_items:
         - build-essential
         - tcl
+      when: redis_install == True
 
     - name: download redis sources
       uri:
         url: "http://download.redis.io/redis-stable.tar.gz"
         dest: "{{ redis_src_dir }}.tar.gz"
         status_code: 200, 304
+      when: redis_install == True
 
     - name: extract redis sources
       unarchive: >
@@ -55,61 +72,124 @@
         remote_src=yes
         owner=root
         mode=0700
+      when: redis_install == True
     
     - name: clean old make executions
       make:
         chdir: "{{ redis_src_dir }}"
         target: distclean
+      when: redis_install == True
 
     - name: compile redis sources
       make:
         chdir: "{{ redis_src_dir }}"
+      when: redis_install == True
   
     - name: test redis sources
       make:
         chdir: "{{ redis_src_dir }}"
         target: test
-      when: redis_test_installation == True
+      when: redis_install == True and redis_test_installation == True
 
     - name: install redis binaries
       make:
         chdir: "{{ redis_src_dir }}"
         target: install
+      when: redis_install == True
 
     - name: create redis user
       user: name=redis system=yes createhome=no
+      when: redis_install == True
 
     - name: create redis working directory
       file: path=/var/lib/redis owner=redis state=directory
+      when: redis_install == True
 
     - name: create redis config directory
       file: path=/etc/redis owner=root state=directory
+      when: redis_install == True
 
     - name: copy redis configuration file
       copy: 
         dest: "{{ redis_cfg_file }}"
         src: "{{ redis_src_dir }}/redis.conf"
         remote_src: yes
+      when: redis_install == True
 
     - name: set supervised to systemd in redis configuration
       replace:
         path: "{{ redis_cfg_file }}"
         regexp: "supervised no"
         replace: "supervised systemd"
+      when: redis_install == True
 
     - name: set dump data directory in redis configuration
       replace:
         path: "{{ redis_cfg_file }}"
         regexp: "^dir ./$"
         replace: "dir /var/lib/redis"
+      when: redis_install == True
 
     - name: make redis accessible from outside container
       replace:
         path: "{{ redis_cfg_file }}"
         regexp: "^bind 127.0.0.1$"
         replace: "bind 0.0.0.0"
+      when: redis_install == True
 
     - name: start redis
       command: "redis-server {{ redis_cfg_file }}"
       async: 45
       poll: 0
+      when: redis_install == True
+
+    - name: install nginx
+      apt: name=nginx
+      when: nginx_install == True
+
+    - name: copy nginx config file
+      template: >
+        src=files/nginx/nginx.conf.j2
+        dest={{ nginx_site_cfg_file }}
+      when: nginx_install == True
+      
+    - name: enable configuration
+      file: >
+        dest=/etc/nginx/sites-enabled/default
+        src={{ nginx_site_cfg_file }}
+        state=link
+      when: nginx_install == True
+
+    - name: restart nginx
+      service: name=nginx state=restarted
+      when: nginx_install == True
+
+    - name: install git using apt
+      apt: name=git
+      when: app_install == True and app_src_vcs == "git"
+
+    - name: clone application git repo
+      git: >
+        repo={{ app_src_repo }} 
+        dest={{ app_src_dir }}
+        depth={{ app_src_depth }}
+      when: app_install == True
+
+    - name: install nodejs process manager - pm2 -
+      npm:
+        name: "pm2"
+        production: yes
+        global: yes
+      when: app_install == True && nodejs_process_manager == True
+
+    - name: install application npm dependencies
+      npm:
+        path: "{{ app_src_dir }}"
+        production: yes
+      when: app_install == True
+
+    - name: run application using pm2
+      command: pm2 start
+      args:
+        chdir: "{{ app_src_dir }}"
+      when: app_install == True

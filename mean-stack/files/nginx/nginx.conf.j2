@@ -1,0 +1,13 @@
+server {
+    listen {{ app_port_number }} default_server;
+    listen [::]:{{ app_port_number }} default_server ipv6only=on;
+
+    root {{ app_root_dir }};
+    index {{ app_index_file }};
+
+    server_name {{ app_domain_name }};
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
