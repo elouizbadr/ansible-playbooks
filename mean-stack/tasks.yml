@@ -1,15 +1,16 @@
 - name: create a mean stack environment
   hosts: mean-stack
+  vars:
+    # NodeJS vars
+    nodejs_version: "8"
+    # MongoDB vars
+    mongodb_version: "3.6"
+    # Redis vars
+    redis_src_dir: "/tmp/redis-stable"
+    redis_cfg_file: "/etc/redis/redis.conf"
   tasks:
-    - name: copy node setup script
-      copy: >
-        src=files/node_8_setup.sh
-        dest=/tmp/node_8_setup.sh
-        mode=0600
-        owner=root
-
     - name: setup nodejs packages
-      command: /bin/bash -C /tmp/node_8_setup.sh
+      script: files/nodejs/setup_{{ nodejs_version }}.sh
 
     - name: install nodejs
       apt: name=nodejs
@@ -19,30 +20,23 @@
 
     - name: create a sources list file for mongodb
       copy:
-        dest: "/etc/apt/sources.list.d/mongodb-org-3.6.list"
-        content: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu xenial/mongodb-org/3.6 multiverse"
+        dest: "/etc/apt/sources.list.d/mongodb-org-{{ mongodb_version }}.list"
+        content: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu xenial/mongodb-org/{{ mongodb_version }} multiverse"
 
     - name: install mongodb apt packages
       apt: name=mongodb-org update_cache=yes
 
-    - name: copy mongodb init.d script
-      copy:
-        src: "files/mongod.sh"
-        dest: "/etc/init.d/mongod.sh"
-        owner: "root"
-        mode: "0700"
-
     - name: make mongodb accessible from outside container
       replace:
         path: "/etc/mongod.conf"
-        regexp: "bindIp: 127.0.0.1"
+        regexp: "^bindIp: 127.0.0.1$"
         replace: "bindIp: 0.0.0.0"
 
     - name: run mongodb service
-      command: /etc/init.d/mongod.sh start
+      script: files/mongodb/mongod.sh start
 
     - name: install redis dependencies
-      apt: name={{item}}
+      apt: name={{ item }}
       with_items:
         - build-essential
         - tcl
@@ -50,12 +44,12 @@
     - name: download redis sources
       uri:
         url: "http://download.redis.io/redis-stable.tar.gz"
-        dest: "/tmp/redis-stable.tar.gz"
+        dest: "{{ redis_src_dir }}.tar.gz"
         status_code: 200, 304
 
     - name: extract redis sources
       unarchive: >
-        src=/tmp/redis-stable.tar.gz
+        src={{ redis_src_dir }}.tar.gz
         dest=/tmp/
         remote_src=yes
         owner=root
@@ -63,21 +57,21 @@
     
     - name: clean old make executions
       make:
-        chdir: /tmp/redis-stable
+        chdir: "{{ redis_src_dir }}"
         target: distclean
 
     - name: compile redis sources
       make:
-        chdir: /tmp/redis-stable
+        chdir: "{{ redis_src_dir }}"
   
     - name: test redis sources
       make:
-        chdir: /tmp/redis-stable
+        chdir: "{{ redis_src_dir }}"
         target: test
 
     - name: install redis binaries
       make:
-        chdir: /tmp/redis-stable
+        chdir: "{{ redis_src_dir }}"
         target: install
 
     - name: create redis user
@@ -91,29 +85,29 @@
 
     - name: copy redis configuration file
       copy: 
-        dest: "/etc/redis/redis.conf"
-        src: "/tmp/redis-stable/redis.conf"
+        dest: "{{ redis_cfg_file }}"
+        src: "{{ redis_src_dir }}/redis.conf"
         remote_src: yes
 
     - name: set supervised to systemd in redis configuration
       replace:
-        path: "/etc/redis/redis.conf"
+        path: "{{ redis_cfg_file }}"
         regexp: "supervised no"
         replace: "supervised systemd"
 
     - name: set dump data directory in redis configuration
       replace:
-        path: "/etc/redis/redis.conf"
+        path: "{{ redis_cfg_file }}"
         regexp: "^dir ./$"
         replace: "dir /var/lib/redis"
 
     - name: make redis accessible from outside container
       replace:
-        path: "/etc/redis/redis.conf"
+        path: "{{ redis_cfg_file }}"
         regexp: "^bind 127.0.0.1$"
         replace: "bind 0.0.0.0"
 
     - name: start redis
-      command: "redis-server /etc/redis/redis.conf"
+      command: "redis-server {{ redis_cfg_file }}"
       async: 45
       poll: 0
