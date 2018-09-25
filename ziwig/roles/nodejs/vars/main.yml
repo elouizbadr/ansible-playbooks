@@ -1,0 +1,5 @@
+nodejs_global_modules: 
+  - pm2
+  - mean-cli 
+  - gulp
+  - bower

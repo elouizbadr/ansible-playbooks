@@ -1,0 +1,11 @@
+- name: deploy ziwig application
+  hosts: ziwig-containers
+  pre_tasks:
+    - name: update the apt cache
+      apt: update_cache=yes
+  roles:
+    - nodejs
+#    - dynamodb
+#    - aws
+#    - app
+#    - nginx

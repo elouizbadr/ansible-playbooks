@@ -1,0 +1,13 @@
+- name: setup nodejs packages
+  script: "files/setup_{{ nodejs_version }}.sh"
+
+- name: install nodejs
+  apt:
+    name: "nodejs"
+
+- name: install nodejs global modules
+  npm:
+    name: "{{ item }}"
+    production: "{{ nodejs_production }}"
+    global: yes
+  with_items: "{{ nodejs_global_modules }}"
