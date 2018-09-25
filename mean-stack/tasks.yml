@@ -2,9 +2,16 @@
   hosts: mean-stack
   vars:
     # NodeJS vars
+    nodejs_install: True
     nodejs_version: "8"
-    nodejs_process_manager: True
+    nodejs_globals: 
+      - pm2
+      - mean-cli 
+      - gulp
+      - bower
+    nodejs_production: yes
     # MongoDB vars
+    mongodb_install: True
     mongodb_version: "3.6"
     # Redis vars
     redis_install: True
@@ -16,37 +23,51 @@
     nginx_site_cfg_file: /etc/nginx/sites-available/default
     # Application vars
     app_install: True
-    app_src_vcs: "git"
-    app_src_repo: "https://github.com/linnovate/mean.git"
-    app_src_dir: "/opt/mean.io"
-    app_src_depth: "1"
-    app_port_number: "3000"
-    app_root_dir: "/opt/mean.io/src"
-    app_index_file: "/opt/mean.io/src/index.html"
-    app_domain_name: "mean.elouiz-badr.com"
+    app_name: "ziwig"
+    app_vcs_type: "git"
+    app_repo_url: "http://gitlab.fycomputing.com/irevolution/ziwig.git"
+    app_dir: "/opt/{{ app_name }}"
+    app_server_port: "3000"
+    app_client_port: "4200"
+    app_dist_dir: "/opt/{{ app_name }}/client/dist"
+    app_domain: "ziwing.elouizbadr.com"
   tasks:
     - name: setup nodejs packages
       script: files/nodejs/setup_{{ nodejs_version }}.sh
+      when: nodejs_install == True
 
     - name: install nodejs
       apt: name=nodejs
+      when: nodejs_install == True
+
+    - name: install nodejs global modules
+      npm:
+        name: "{{ item }}"
+        production: "{{ nodejs_production }}"
+        global: yes
+      with_items: "{{ nodejs_globals }}"
+      when: nodejs_install == True
 
     - name: import mongodb apt gpg key
       command: apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv 2930ADAE8CAF5059EE73BB4B58712A2291FA4AD5
+      when: mongodb_install == True
 
     - name: create a sources list file for mongodb
       copy:
         dest: "/etc/apt/sources.list.d/mongodb-org-{{ mongodb_version }}.list"
         content: "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu xenial/mongodb-org/{{ mongodb_version }} multiverse"
+      when: mongodb_install == True
 
     - name: install mongodb apt packages
       apt: name=mongodb-org update_cache=yes
+      when: mongodb_install == True
 
     - name: make mongodb accessible from outside container
       replace:
         path: "/etc/mongod.conf"
         regexp: "^bindIp: 127.0.0.1$"
         replace: "bindIp: 0.0.0.0"
+      when: mongodb_install == True
 
     - name: run mongodb service
       script: files/mongodb/mongod.sh start
@@ -159,37 +180,24 @@
         src={{ nginx_site_cfg_file }}
         state=link
       when: nginx_install == True
+      notify: restart nginx
 
-    - name: restart nginx
-      service: name=nginx state=restarted
-      when: nginx_install == True
-
-    - name: install git using apt
-      apt: name=git
-      when: app_install == True and app_src_vcs == "git"
-
-    - name: clone application git repo
-      git: >
-        repo={{ app_src_repo }} 
-        dest={{ app_src_dir }}
-        depth={{ app_src_depth }}
+    - name: create mean stack boilerplate
+      command: mean init {{ app_src_dir }}
       when: app_install == True
-
-    - name: install nodejs process manager - pm2 -
-      npm:
-        name: "pm2"
-        production: yes
-        global: yes
-      when: app_install == True && nodejs_process_manager == True
 
     - name: install application npm dependencies
-      npm:
-        path: "{{ app_src_dir }}"
-        production: yes
-      when: app_install == True
-
-    - name: run application using pm2
-      command: pm2 start
+      command: npm install {{ '--production' if nodejs_production is defined else ''  }}
       args:
         chdir: "{{ app_src_dir }}"
       when: app_install == True
+
+    - name: run application using pm2
+      command: "pm2 start {{ app_main_file }}"
+      args:
+        chdir: "{{ app_src_dir }}"
+      when: app_install == True
+
+  handlers:
+    - name: restart nginx
+      service: name=nginx state=restarted
